@@ -172,18 +172,13 @@ operation**, not two separate ones.
    **Without this, the assembly would look for the original, pre-upload file name after
    downloading** (confirmed in practice by the FreeCAD message: `Link broken! ... File:
    <original_name>.FCStd`).
-4. If the PDM storage is visible from this machine (see `GET /api/config`), the copy goes
-   into the **SHARED folder** `storage/components/` (one for all projects — a
-   Part/Assembly can be shared as a BOM component across projects) and is **REGISTERED
-   WITHOUT being re-uploaded over HTTP** (`POST /api/items/{id}/attachments/register`) —
-   the copy is already physically sitting in the server's storage. **The PDM KEEPS copies
-   of previous revisions** — e.g. `67 (name).A.FCStd` stays when revision B is created;
-   only the copy of THAT SAME revision gets overwritten (i.e. a repeat upload with no
-   status change). If the storage is unreachable from this machine (e.g. FreeCAD on a
-   different computer than the server), the copy goes through a plain HTTP upload instead
-   (`POST /api/items/{id}/attachments`, the same mechanism as attaching CAD files from the
-   properties panel in the web application) — in that case revision history is not
-   preserved.
+4. The file is **always uploaded over HTTP** (`POST /api/items/{id}/attachments`).
+   Server storage paths are never created or used on the client: a Windows client and a
+   Linux/Docker server do not share a filesystem merely because a similar path can be
+   created locally. Local PDM filenames and assembly links are still preserved as above.
+   Previous revisions remain attached; re-uploading the same CAD filename replaces only
+   that revision. Upload failures are shown in FreeCAD's Report view and an error dialog,
+   and close the web progress panel instead of leaving it stuck on "Uploading".
 5. **Optionally exports STEP and/or PDF and uploads them automatically as attachments
    with the "step"/"pdf" roles.** Where the Yes/No comes from depends on the path taken
    above: for a **new item** or **attach to existing** decided in the browser (step 2), it
@@ -344,15 +339,8 @@ the Assembly/Assembly4 workbench) to **other, saved `.FCStd` files**, the macro 
   VarSets. Counting them as components fabricated a cycle in the BOM (an assembly ending up
   as the parent of its own part, which the backend rejects) and inflated the quantity of
   the linked component by one per VarSet link.
-- **Copying/registering the file in `storage/` assumes that folder is visible in this
-  machine's file system** — today the client (FreeCAD) and the server (`EasyPDM.Api`) run
-  on the same disk, so this works with no extra configuration. If `GET /api/config` is
-  unreachable or the path isn't writable (e.g. FreeCAD on a different machine than the
-  server), the copy goes to the PDM via a plain HTTP upload instead — in this fallback
-  mode revision history is NOT preserved (every upload overwrites the previous copy on
-  the PDM side).
-- The registration endpoint only accepts paths that lie inside the configured storage
-  (`StorageRoot`) — it can't be used to "attach" an arbitrary file from the server's disk.
+- **Uploads always use HTTP**, including same-machine installations. No shared storage
+  mount is required, and server storage paths are never interpreted as client paths.
 - The saved document is sent in its current state — the macro does not validate, for
   instance, whether the document has unsaved changes open in other linked files.
 - **The "unsaved changes" asterisk next to the document's name can remain visible even

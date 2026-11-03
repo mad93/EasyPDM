@@ -85,16 +85,9 @@ Co robi (w tej kolejności):
        już pod nową nazwą — dokładnie tą, pod jaką EasyPDMDownload.FCMacro później zapisuje
        pobrane pliki, więc odnośniki po pobraniu od razu się zgadzają (bez tego złożenie
        szukałoby oryginalnej, sprzed-wysyłkowej nazwy pliku, potwierdzone w praktyce
-       komunikatem FreeCAD "Link broken! ... File: <oryginalna_nazwa>.FCStd"). Jeśli magazyn
-       PDM jest widoczny z tej maszyny (zob. GET /api/config), kopia trafia do WSPÓLNEGO
-       folderu storage/components/ (jednego dla wszystkich projektów — Część/Złożenie bywa
-       współdzielone jako komponent BOM między projektami) i jest REJESTROWANA
-       (POST .../attachments/register, bez ponownego przesyłania przez HTTP — kopia już
-       fizycznie leży w magazynie serwera). PDM ZACHOWUJE kopie poprzednich rewizji (np.
-       "67 (nazwa).A.FCStd" zostaje, gdy powstaje rewizja B) — nadpisywana jest tylko kopia
-       TEJ SAMEJ rewizji (powtórna wysyłka bez zmiany statusu). Jeśli magazyn jest
-       nieosiągalny, kopia trafia przez zwykły upload HTTP (POST /api/items/{id}/attachments,
-       ten sam mechanizm co dogrywanie plików CAD z panelu właściwości w aplikacji webowej).
+       komunikatem FreeCAD "Link broken! ... File: <oryginalna_nazwa>.FCStd"). Plik zawsze
+       jest wysyłany przez HTTP (POST /api/items/{id}/attachments). Poprzednie rewizje
+       zostają; powtórna wysyłka tej samej nazwy zastępuje tylko tę rewizję.
 
 Automatyczne wykrywanie złożenia:
     Jeśli aktywny dokument linkuje (App::Link — standardowy sposób budowania złożeń
@@ -165,12 +158,8 @@ Ograniczenia (świadomie poza zakresem pierwszej wersji):
       aktywnie edytowany/otwarty; jeśli ktoś ręcznie wróci do starego pliku i coś w nim
       zmieni, te zmiany NIE trafią automatycznie do PDM (trzeba by je wysłać z powrotem,
       tworząc kolejną rewizję).
-    - Kopiowanie/rejestrowanie pliku w folderze magazynu zakłada, że jest on widoczny
-      w systemie plików tej maszyny (dziś: klient i serwer na tym samym dysku) — jeśli
-      GET /api/config jest nieosiągalne albo ścieżka nie istnieje/nie da się do niej
-      zapisać, kopia trafia do PDM zwykłym uploadem (kopia HTTP) — w tym trybie
-      fallbackowym historia rewizji nie jest zachowywana (każda wysyłka nadpisuje
-      poprzednią kopię po stronie PDM).
+    - Ścieżki magazynu serwera nigdy nie są używane jako lokalne ścieżki klienta.
+      Lokalna kopia dokumentu i magazyn PDM są niezależne; transfer odbywa się przez HTTP.
     - Adres API zapisywany jest w preferencjach FreeCAD (User parameter:BaseApp/EasyPDM),
       domyślnie http://localhost:5000/api.
 """
@@ -810,15 +799,6 @@ def api_delete(path):
         raise RuntimeError(t("no_connection", url=get_base_url(), reason=e.reason))
 
 
-def api_register_attachment(item_id, file_path, role=None):
-    """Rejestruje JUŻ ISTNIEJĄCY plik (już wewnątrz magazynu PDM) jako załącznik —
-    bez przesyłania go drugi raz przez HTTP (zob. POST .../attachments/register)."""
-    body = {"filePath": file_path}
-    if role:
-        body["role"] = role
-    return api_post_json(f"/items/{item_id}/attachments/register", body)
-
-
 # ============================================================================
 # Postęp wysyłki/pobierania pokazywany w aplikacji webowej jako lista plików odhaczana w
 # trakcie pracy makra (zob. TransferProgressStore.cs / TransferProgressPanel.tsx).
@@ -992,17 +972,6 @@ def revision_label(n):
         n, remainder = divmod(n - 1, 26)
         label = chr(65 + remainder) + label
     return label or "A"
-
-
-def get_storage_root():
-    """Pyta API o skonfigurowany StorageRoot — działa tylko, gdy magazyn jest
-    widoczny w systemie plików tej maszyny (dziś: klient i serwer na tym samym
-    dysku). Zwraca None, jeśli API nie odpowie albo ścieżka jest niedostępna."""
-    try:
-        config = api_get("/config")
-        return config.get("storageRoot") if config else None
-    except Exception:
-        return None
 
 
 def _document_size(doc):
@@ -1606,24 +1575,18 @@ def _rename_and_upload(doc, item_id, record_name, name, revision, target_folder=
     w oryginalnym folderze) ZOSTAJE na dysku nietknięty — nic nie usuwamy automatycznie,
     tylko doc.FileName od teraz wskazuje na nowy.
 
-    Jeśli magazyn PDM jest osiągalny z tej maszyny (zob. GET /api/config): kopia trafia do
-    WSPÓLNEGO folderu storage/components/ (jeden dla wszystkich projektów — Część/Złożenie
-    bywa współdzielone jako komponent BOM między projektami) i jest REJESTROWANA
-    (POST .../attachments/register, bez ponownego przesyłania przez HTTP — plik już fizycznie
-    leży w magazynie serwera). PDM ZACHOWUJE kopie poprzednich rewizji (np. "67 (nazwa).A.FCStd"
-    zostaje, gdy powstaje rewizja B) — nadpisywana jest tylko kopia TEJ SAMEJ rewizji, czyli
-    powtórna wysyłka bez zmiany statusu. Jeśli magazyn nie jest osiągalny, kopia trafia przez
-    zwykły upload HTTP (POST .../attachments) pod tą samą, ładną nazwą.
+    Plik zawsze trafia przez HTTP (POST .../attachments). Ścieżka magazynu serwera nie
+    oznacza wspólnego systemu plików, szczególnie dla Windows + Docker/Linux.
+    Poprzednie rewizje zostają; ponowna wysyłka tej samej nazwy zastępuje tę rewizję.
 
-    Każdy załącznik dostaje rolę "cad" (patrz api_register_attachment/api_upload_file
+    Każdy załącznik dostaje rolę "cad" (patrz api_upload_file
     poniżej) — dzięki temu front pokazuje go osobno, pod "Załączniki CAD", zamiast razem
     ze zwykłymi, ręcznie dodanymi plikami. W odróżnieniu od ról "pdf"/"step" (jeden
     załącznik na rolę, nowy zastępuje poprzedni) rola "cad" może mieć wiele załączników —
     unikalna nazwa pliku per rewizja oznacza, że kolejne wysyłki się nie nadpisują.
 
     Zwraca dict: {"itemId", "itemNumber", "newPath", "localRenamed"} — "newPath" to ścieżka
-    KOPII na serwerze (albo lokalny plik, jeśli magazyn jest nieosiągalny), NIE lokalny plik
-    dokumentu (ten jest teraz dostępny jako doc.FileName). "localRenamed" mówi, czy lokalny
+    lokalnego pliku wysłanego przez HTTP (doc.FileName). "localRenamed" mówi, czy lokalny
     plik FAKTYCZNIE zmienił ścieżkę (False, jeśli już tam był — np. powtórna wysyłka tej samej
     rewizji już przemianowanego pliku) — do komunikatu końcowego w run(), żeby nie sugerować
     przenosin, które się nie odbyły."""
@@ -1652,55 +1615,10 @@ def _rename_and_upload(doc, item_id, record_name, name, revision, target_folder=
     if local_renamed:
         _refresh_links_to(doc)
 
-    storage_root = get_storage_root()
-    target_path = None
-    if storage_root:
-        components_dir = os.path.join(storage_root, "components")
-        try:
-            os.makedirs(components_dir, exist_ok=True)
-            target_path = os.path.join(components_dir, new_filename)
-            shutil.copy2(doc.FileName, target_path)
-        except OSError:
-            target_path = None  # magazyn niedostępny z tej maszyny — spadamy do zwykłego uploadu
-
-    if target_path:
-        # Jeśli kopia TEJ SAMEJ rewizji (dokładnie ta sama nazwa) jest już zarejestrowana,
-        # nie trzeba nic robić — świeże bajty już tam leżą (shutil.copy2 nadpisał w miejscu),
-        # a rejestrowanie drugi raz tej samej ścieżki i tak by się nie udało (unikalny
-        # file_path w bazie). Załączniki innych rewizji (inna litera) zostają nietknięte —
-        # to zachowana historia rewizji.
-        try:
-            existing = api_get(f"/items/{item_id}/attachments")
-        except Exception:
-            existing = []
-        already_registered = any(a["fileName"] == new_filename for a in existing or [])
-        if not already_registered:
-            try:
-                api_register_attachment(item_id, target_path, role="cad")
-            except Exception:
-                # Rejestracja zawiodła — bez sprzątania kopia w storage/components/ zostałaby
-                # osierocona: nigdy niezarejestrowana jako załącznik, zajmuje miejsce na dysku
-                # serwera bez żadnego odpowiadającego jej wpisu w bazie.
-                try:
-                    os.remove(target_path)
-                except OSError:
-                    pass
-                raise
-        if export_step:
-            _upload_step_attachment(doc, item_id)
-        if export_pdf:
-            _upload_pdf_attachment(doc, item_id)
-        _push_mass_and_material(doc, item_id)
-        return {
-            "itemId": item_id,
-            "itemNumber": record_name,
-            "newPath": target_path,
-            "localRenamed": local_renamed,
-        }
-
-    # Unlike the register path above (which overwrites the SAME physical file in place, so
-    # re-registering an unchanged name is correctly a no-op), a plain HTTP upload always
-    # lands at a BRAND NEW server-generated path with no relation to "new_filename" --
+    # Always use HTTP: a server storage path is not proof of a shared filesystem.
+    # In particular, Windows can create /data/storage on its own current drive even
+    # though that path belongs to a remote Linux container. Never create it locally.
+    # A plain HTTP upload always lands at a BRAND NEW server-generated path --
     # without this check, repeated uploads while the revision letter stays the same (e.g.
     # several saves in a row while still "w_pracy", no status change) would each add
     # ANOTHER "cad" attachment instead of replacing the one for THIS revision, accumulating
@@ -3142,6 +3060,16 @@ def run():
     # wskazywało już nowe nazwy części, a plik na dysku stare, aż do ręcznego Ctrl+S.
     try:
         _send_and_link(doc, target_folder)
+    except Exception as exc:
+        import traceback
+
+        progress_mark(TOP_DOCUMENT_PROGRESS_KEY, "failed")
+        progress_finish()
+        App.Console.PrintError("EasyPDM: " + traceback.format_exc() + "\n")
+        QtWidgets.QMessageBox.critical(
+            _main_window(), t("pdm_title"),
+            t("upload_component_failed", file=os.path.basename(doc.FileName), error=exc),
+        )
     finally:
         _save_open_documents()
 
@@ -3275,7 +3203,7 @@ def _send_and_link(doc, target_folder):
     App.Console.PrintMessage(
         f"EasyPDM: wyslano jako {info['itemNumber']}"
         + (f" razem z {len(edges_for_top)} podelementami" if edges_for_top else "")
-        + f"; kopia w magazynie PDM: {info['newPath']}; {local_line}\n"
+        + f"; wyslano przez HTTP z: {info['newPath']}; {local_line}\n"
     )
 
     # JEDEN wyjątek, dla którego okno zostaje: komponenty już podpięte do PDM ze statusem
