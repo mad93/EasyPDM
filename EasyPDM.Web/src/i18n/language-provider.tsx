@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 
 import { LanguageContext } from "@/i18n/language-context"
 import { translations, type Language, type TranslationKey } from "@/i18n/translations"
@@ -12,6 +12,10 @@ function readStoredLanguage(): Language {
 
 function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(readStoredLanguage)
+
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
 
   const setLanguage = useCallback((next: Language) => {
     setLanguageState(next)

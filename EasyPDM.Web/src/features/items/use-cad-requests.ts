@@ -86,5 +86,5 @@ export function useCadRequests() {
       cancelled = true
       clearInterval(id)
     }
-  }, [])
+  }, [t])
 }

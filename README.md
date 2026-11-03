@@ -389,7 +389,7 @@ individually, and each type can be turned off in Settings → Notifications.
 
 Two roles: **administrator** (full access, sees all projects, manages accounts and
 server settings) and **user** (sees and works only in the projects they've been assigned
-to). Everyone manages their own interface language (Polish/English/German) and
+to). Everyone manages their own interface language (Polish/English/German/Catalan/Spanish) and
 light/dark theme in Settings.
 
 ## For administrators and developers

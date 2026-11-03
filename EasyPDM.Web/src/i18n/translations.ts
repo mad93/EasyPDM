@@ -1,6 +1,8 @@
-// Jeden plik, z którego czerpane są wszystkie wersje językowe interfejsu. Polski (pl) jest
+import { ca, es } from "./translations-ca-es"
+
+// Polski (pl) jest
 // bazowym, kompletnym słownikiem — TypeScript wymusza (przez Record<TranslationKey, string>),
-// żeby "en"/"de" miały DOKŁADNIE te same klucze, więc nowy tekst dodany po polsku, a zapomniany
+// żeby pozostałe języki miały DOKŁADNIE te same klucze, więc nowy tekst dodany po polsku, a zapomniany
 // w innym języku, jest błędem kompilacji, nie cichą luką w tłumaczeniu.
 //
 // Wartości mogą zawierać placeholdery w postaci {nazwa} — podstawiane przez t(key, params)
@@ -2314,7 +2316,7 @@ const de: Record<TranslationKey, string> = {
   "logs.loadFailed": "Die Protokolle konnten nicht geladen werden.",
 }
 
-export const translations = { pl, en, de }
+export const translations = { pl, en, de, ca, es }
 
 export type Language = keyof typeof translations
 
@@ -2322,6 +2324,8 @@ export const LANGUAGE_NATIVE_NAMES: Record<Language, string> = {
   pl: "Polski",
   en: "English",
   de: "Deutsch",
+  ca: "Català",
+  es: "Castellano",
 }
 
 export { type TranslationKey }

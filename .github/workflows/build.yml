@@ -61,6 +61,10 @@ jobs:
         working-directory: EasyPDM.Web
         run: npx oxlint src
 
+      - name: Check translations
+        working-directory: EasyPDM.Web
+        run: npm run test:i18n
+
       - name: Buduj
         working-directory: EasyPDM.Web
         run: npm run build
